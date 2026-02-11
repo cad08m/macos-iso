@@ -24,7 +24,7 @@ on:
 
 jobs:
   unified-asr-installer:
-    runs-on: macos-12
+    runs-on: macos-15-intel
     permissions:
       contents: read
       packages: write
