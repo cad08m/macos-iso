@@ -7,29 +7,31 @@ ESD_MOUNT="/tmp/esd"
 SPARSE_IMG="/tmp/ASR_Installer.sparseimage"
 TARGET_MOUNT="/tmp/target"
 echo "🙏 Blessing and optimizing image..."
-
-# ===================== NEW BLOCK START =====================
-# Reliable mount + device detection (CI safe, replaces hdiutil parsing)
-
-# Ensure target is mounted
-if ! mount | grep -q " $TARGET_MOUNT "; then
-  echo "⚠️ $TARGET_MOUNT not mounted. Attempting to re-attach..."
+# Dynamically find the device node and mount point after ASR restore
+TARGET_DEV=$(hdiutil info | awk '/\/private\/tmp\/target/ {getline; print $1}' | head -1)
+if [ -z "$TARGET_DEV" ]; then
+  echo "❌ Could not find device node for $TARGET_MOUNT. Attempting to re-attach..."
   hdiutil attach "$SPARSE_IMG" -mountpoint "$TARGET_MOUNT" || true
   sleep 2
+  TARGET_DEV=$(hdiutil info | awk '/\/private\/tmp\/target/ {getline; print $1}' | head -1)
 fi
-
-# Get device directly from mount table
-TARGET_DEV=$(mount | awk -v mp="$TARGET_MOUNT" '$3 == mp {print $1}' | head -1)
-
 if [ -z "$TARGET_DEV" ]; then
-  echo "❌ Still could not determine device for $TARGET_MOUNT"
+  echo "❌ Still could not find device node for $TARGET_MOUNT"
+  hdiutil info
+  exit 1
+fi
+MOUNT_POINT=$(mount | grep "$TARGET_DEV" | awk '{print $3}' | head -1)
+if [ -z "$MOUNT_POINT" ]; then
+  echo "❌ Could not find mount point for $TARGET_DEV. Attempting to re-attach..."
+  hdiutil attach "$SPARSE_IMG" -mountpoint "$TARGET_MOUNT" || true
+  sleep 2
+  MOUNT_POINT=$(mount | grep "$TARGET_DEV" | awk '{print $3}' | head -1)
+fi
+if [ -z "$MOUNT_POINT" ]; then
+  echo "❌ Still could not find mount point for $TARGET_DEV"
   mount
   exit 1
 fi
-
-MOUNT_POINT="$TARGET_MOUNT"
-# ====================== NEW BLOCK END ======================
-
 # Enable owners if disabled
 OWNERS_STATUS=$(diskutil info "$MOUNT_POINT" | awk -F': ' '/Owners/ {print $2}' | xargs)
 if [[ "$OWNERS_STATUS" != "Enabled" ]]; then
